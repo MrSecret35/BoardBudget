@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.env
+*.pyc
+.DS_Store
+streamlit-smoke*.log
+exports/*.xlsx
+boards/*.xlsx
+!boards/.gitkeep
+!exports/.gitkeep
