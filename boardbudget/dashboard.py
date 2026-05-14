@@ -4,21 +4,24 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from .calendar_utils import classify_day, get_italian_holidays_for_years
+from .calendar_utils import classify_day, get_italian_holidays_for_years, is_non_working_day
 from .config import STATUS_PLANNED
 from .config import WEEKDAY_CODES
 from .models import BoardData, WarningMessage
 from .planner_engine import PlanningResult
 
 
-def _is_working_day(day: date, working_days: tuple[str, ...]) -> bool:
+def _is_working_day(day: date, working_days: tuple[str, ...], holidays_map: dict[date, str] | None = None) -> bool:
+    if holidays_map is not None and is_non_working_day(day, holidays_map):
+        return False
     allowed = {WEEKDAY_CODES[d] for d in working_days if d in WEEKDAY_CODES} or {0, 1, 2, 3, 4}
     return day.weekday() in allowed
 
 
 def _next_working_day(day: date, working_days: tuple[str, ...]) -> date:
+    holidays_map = get_italian_holidays_for_years({day.year, (day + timedelta(days=370)).year})
     current = day + timedelta(days=1)
-    while not _is_working_day(current, working_days):
+    while not _is_working_day(current, working_days, holidays_map):
         current += timedelta(days=1)
     return current
 
@@ -26,10 +29,11 @@ def _next_working_day(day: date, working_days: tuple[str, ...]) -> date:
 def _working_days_between(start: date | None, end: date | None, working_days: tuple[str, ...]) -> int:
     if start is None or end is None or end < start:
         return 0
+    holidays_map = get_italian_holidays_for_years(set(range(start.year, end.year + 1)))
     count = 0
     current = start
     while current <= end:
-        if _is_working_day(current, working_days):
+        if _is_working_day(current, working_days, holidays_map):
             count += 1
         current += timedelta(days=1)
     return count

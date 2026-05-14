@@ -10,6 +10,7 @@ from boardbudget.dashboard import build_activity_economics_dataframe, build_cale
 from boardbudget.estimates import EstimateExpressionError, normalize_estimates, parse_number_expression
 from boardbudget.models import Activity, Assignment, BoardData, BoardSettings, Person
 from boardbudget.planner_engine import calculate_plan
+from boardbudget.ui.aggrid import render_calendar_grid
 
 
 def board(
@@ -39,6 +40,34 @@ def test_calendar_pivot_includes_weekends_between_friday_and_monday() -> None:
     assert pivot["date"].tolist() == ["2026-05-15", "2026-05-16", "2026-05-17", "2026-05-18"]
     weekend_rows = pivot[pivot["day_type"] == "WEEKEND"]
     assert weekend_rows["P1"].tolist() == ["", ""]
+
+
+def test_italian_weekday_holiday_is_skipped_and_visible_in_pivot() -> None:
+    data = board(
+        start_date=date(2026, 6, 1),
+        activities=[Activity("A1", 1, "Work", 16, 8, "PLANNED", "", daily_price=400)],
+        assignments=[Assignment("A1", "P1")],
+    )
+    result = calculate_plan(data)
+    calendar_df = build_calendar_dataframe(result, data)
+    pivot = build_calendar_pivot_dataframe(calendar_df, data)
+
+    assert sorted({a.date for a in result.allocations}) == [date(2026, 6, 1), date(2026, 6, 3)]
+    holiday_row = pivot[pivot["date"] == "2026-06-02"].iloc[0]
+    assert holiday_row["day_type"] == "HOLIDAY"
+    assert holiday_row["holiday_name"]
+    assert holiday_row["P1"] == ""
+
+
+def test_holiday_on_weekday_pushes_work_to_next_working_day() -> None:
+    data = board(
+        start_date=date(2026, 6, 2),
+        activities=[Activity("A1", 1, "Work", 8, 8, "PLANNED", "", daily_price=400)],
+        assignments=[Assignment("A1", "P1")],
+    )
+    result = calculate_plan(data)
+
+    assert [a.date for a in result.allocations] == [date(2026, 6, 3)]
 
 
 def test_calendar_day_type_classification_for_weekend_and_holiday() -> None:
@@ -71,6 +100,37 @@ def test_missing_daily_price_warning() -> None:
     result = calculate_plan(data)
 
     assert any(w.code == "MISSING_DAILY_PRICE" for w in result.warnings)
+
+
+def test_shared_activity_with_max_four_hours_per_day_uses_both_people() -> None:
+    data = board(
+        people=[Person("P1", "One", 8, True), Person("P2", "Two", 8, True)],
+        activities=[Activity("A1", 1, "Limited shared", 24, 4, "PLANNED", "", daily_price=400)],
+        assignments=[Assignment("A1", "P1"), Assignment("A1", "P2")],
+    )
+    result = calculate_plan(data)
+
+    day_one = [a for a in result.allocations if a.date == date(2026, 5, 15)]
+    assert [(a.person_id, a.hours) for a in day_one] == [("P1", 4), ("P2", 4)]
+    assert sum(a.hours for a in result.allocations) == 24
+
+
+def test_shared_activity_can_be_completed_mainly_by_person_who_reaches_it_first() -> None:
+    data = board(
+        start_date=date(2026, 5, 13),
+        people=[Person("P1", "One", 8, True), Person("P2", "Two", 8, True)],
+        activities=[
+            Activity("A1", 1, "P1 only", 16, 8, "PLANNED", "", daily_price=400),
+            Activity("A2", 2, "Shared", 24, 8, "PLANNED", "", daily_price=400),
+        ],
+        assignments=[Assignment("A1", "P1"), Assignment("A2", "P1"), Assignment("A2", "P2")],
+    )
+    result = calculate_plan(data)
+    p2_shared = sum(a.hours for a in result.allocations if a.activity_id == "A2" and a.person_id == "P2")
+    p1_shared = sum(a.hours for a in result.allocations if a.activity_id == "A2" and a.person_id == "P1")
+
+    assert p2_shared > p1_shared
+    assert p2_shared + p1_shared == 24
 
 
 def test_assignment_matrix_conversion_to_normalized_rows() -> None:
@@ -133,3 +193,7 @@ def test_blank_and_whitespace_estimates_normalize_without_warning() -> None:
     assert estimated_days is None
     assert estimated_hours == 0
     assert warnings == []
+
+
+def test_aggrid_helper_import_smoke() -> None:
+    assert callable(render_calendar_grid)

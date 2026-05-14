@@ -20,9 +20,9 @@ from boardbudget.dashboard import (
 from boardbudget.estimates import normalize_estimates
 from boardbudget.excel_store import get_sheet_names
 from boardbudget.models import Activity, Assignment, BoardData, Person
+from boardbudget.ui.aggrid import render_calendar_grid, render_raw_calendar_grid
 from boardbudget.ui.components import (
     activity_column_config,
-    calendar_column_config,
     people_column_config,
     raw_assignment_column_config,
     show_dataframe_or_empty,
@@ -219,12 +219,6 @@ def render_assignments_editor(board_data: BoardData) -> list[Assignment] | None:
     return None
 
 
-def _calendar_row_style(row: pd.Series) -> list[str]:
-    if row.get("day_type") in {"WEEKEND", "HOLIDAY", "WEEKEND_HOLIDAY"}:
-        return ["background-color: #ffe5e5; color: #9b1c1c"] * len(row)
-    return [""] * len(row)
-
-
 def render_calendar(calendar_df: pd.DataFrame, board_data: BoardData) -> None:
     st.subheader("Pivot calendar")
     pivot_df = build_calendar_pivot_dataframe(calendar_df, board_data)
@@ -232,15 +226,12 @@ def render_calendar(calendar_df: pd.DataFrame, board_data: BoardData) -> None:
         st.info("No calendar allocations yet.")
     else:
         person_ids = [p.person_id for p in board_data.people if p.active]
-        st.dataframe(
-            pivot_df.style.apply(_calendar_row_style, axis=1),
-            use_container_width=True,
-            hide_index=True,
-            height=460,
-            column_config=calendar_column_config(person_ids),
-        )
+        render_calendar_grid(pivot_df, person_ids)
     st.subheader("Raw allocations")
-    show_dataframe_or_empty(calendar_df, "No raw allocation rows yet.")
+    if calendar_df.empty:
+        st.info("No raw allocation rows yet.")
+    else:
+        render_raw_calendar_grid(calendar_df)
 
 
 def render_warnings(warnings_df: pd.DataFrame) -> None:

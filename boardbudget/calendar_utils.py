@@ -16,6 +16,10 @@ def get_italian_holidays_for_years(years: set[int]) -> dict[date, str]:
     return {holiday_date: str(name) for holiday_date, name in calendar.items()}
 
 
+def is_non_working_day(day: date, holidays_map: dict[date, str]) -> bool:
+    return is_weekend(day) or day in holidays_map
+
+
 def classify_day(day: date, holidays_map: dict[date, str]) -> tuple[str, str]:
     weekend = is_weekend(day)
     holiday_name = holidays_map.get(day, "")
@@ -27,4 +31,3 @@ def classify_day(day: date, holidays_map: dict[date, str]) -> tuple[str, str]:
     if holiday:
         return "HOLIDAY", holiday_name
     return "WORKING_DAY", ""
-

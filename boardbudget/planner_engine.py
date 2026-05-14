@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from math import isfinite
 
+from .calendar_utils import get_italian_holidays_for_years, is_non_working_day
 from .config import DEFAULT_HOURS_PER_DAY, DEFAULT_MAX_CALENDAR_DAYS, STATUS_PLANNED, WEEKDAY_CODES
 from .models import Activity, BoardData, CalendarAllocation, Person, WarningMessage
 from .validation import validate_board_data
@@ -31,7 +32,9 @@ def _activity_order(activity: Activity) -> tuple[int, str]:
     return (activity.order if activity.order is not None else 999_999_999, activity.activity_id)
 
 
-def _is_working_day(day: date, working_days: tuple[str, ...]) -> bool:
+def _is_working_day(day: date, working_days: tuple[str, ...], holidays_map: dict[date, str]) -> bool:
+    if is_non_working_day(day, holidays_map):
+        return False
     allowed = {WEEKDAY_CODES[d] for d in working_days if d in WEEKDAY_CODES}
     if not allowed:
         allowed = {0, 1, 2, 3, 4}
@@ -65,8 +68,7 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
             assignment_map.setdefault(assignment.activity_id, []).append(assignment.person_id)
 
     planned_activities: list[Activity] = []
-    quotas: dict[tuple[str, str], float] = {}
-    remaining: dict[tuple[str, str], float] = {}
+    remaining: dict[str, float] = {}
     for activity in board_data.activities:
         if not activity.activity_id:
             continue
@@ -76,10 +78,7 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
         if status != STATUS_PLANNED or estimated_hours <= 0 or not assignees:
             continue
         planned_activities.append(activity)
-        quota = estimated_hours / len(assignees)
-        for person_id in assignees:
-            quotas[(person_id, activity.activity_id)] = quota
-            remaining[(person_id, activity.activity_id)] = quota
+        remaining[activity.activity_id] = estimated_hours
 
     planned_activities.sort(key=_activity_order)
     allocations: list[CalendarAllocation] = []
@@ -87,8 +86,9 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
 
     current_day = board_data.settings.start_date
     last_day = board_data.settings.start_date + timedelta(days=DEFAULT_MAX_CALENDAR_DAYS - 1)
+    holidays_map = get_italian_holidays_for_years(set(range(current_day.year, last_day.year + 1)))
     while current_day <= last_day and any(hours > 0.000001 for hours in remaining.values()):
-        if not _is_working_day(current_day, board_data.settings.working_days):
+        if not _is_working_day(current_day, board_data.settings.working_days, holidays_map):
             current_day += timedelta(days=1)
             continue
 
@@ -98,8 +98,9 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
                 selected: Activity | None = None
                 selected_remaining_max = 0.0
                 for activity in planned_activities:
-                    key = (person.person_id, activity.activity_id)
-                    if remaining.get(key, 0.0) <= 0.000001:
+                    if person.person_id not in assignment_map.get(activity.activity_id, []):
+                        continue
+                    if remaining.get(activity.activity_id, 0.0) <= 0.000001:
                         continue
                     max_per_day = _positive_or_default(activity.max_hours_per_day, DEFAULT_HOURS_PER_DAY)
                     used_today = daily_activity_hours.get((current_day, person.person_id, activity.activity_id), 0.0)
@@ -112,8 +113,7 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
                 if selected is None:
                     break
 
-                key = (person.person_id, selected.activity_id)
-                hours = min(daily_remaining, remaining[key], selected_remaining_max)
+                hours = min(daily_remaining, remaining[selected.activity_id], selected_remaining_max)
                 hours = round(hours, 6)
                 if hours <= 0:
                     break
@@ -131,7 +131,7 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
                 daily_activity_hours[(current_day, person.person_id, selected.activity_id)] = (
                     daily_activity_hours.get((current_day, person.person_id, selected.activity_id), 0.0) + hours
                 )
-                remaining[key] = round(remaining[key] - hours, 6)
+                remaining[selected.activity_id] = round(remaining[selected.activity_id] - hours, 6)
                 daily_remaining = round(daily_remaining - hours, 6)
 
         current_day += timedelta(days=1)
@@ -178,4 +178,3 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
         activity_summary=activity_summary,
         person_summary=person_summary,
     )
-

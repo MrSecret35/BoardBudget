@@ -41,7 +41,7 @@ def test_single_person_single_activity_two_working_days() -> None:
     assert sorted({a.date for a in result.allocations}) == [date(2026, 5, 13), date(2026, 5, 14)]
 
 
-def test_shared_activity_split_equally() -> None:
+def test_shared_activity_uses_global_remaining_hours_not_equal_split() -> None:
     result = calculate_plan(
         board(
             people=[Person("P1", "Person 1", 8, True), Person("P2", "Person 2", 8, True)],
@@ -50,7 +50,9 @@ def test_shared_activity_split_equally() -> None:
         )
     )
 
-    assert hours_by_person(result, "A1") == {"P1": 20, "P2": 20}
+    totals = hours_by_person(result, "A1")
+    assert sum(totals.values()) == 40
+    assert totals != {"P1": 20, "P2": 20}
 
 
 def test_shared_independent_planning() -> None:
@@ -69,6 +71,8 @@ def test_shared_independent_planning() -> None:
     p1_a2_dates = [a.date for a in result.allocations if a.person_id == "P1" and a.activity_id == "A2"]
     assert min(p2_a2_dates) == date(2026, 5, 13)
     assert min(p1_a2_dates) == date(2026, 5, 15)
+    assert sum(a.hours for a in result.allocations if a.activity_id == "A2") == 40
+    assert hours_by_person(result, "A2") != {"P1": 20, "P2": 20}
 
 
 def test_max_four_hours_per_day_fills_remaining_capacity() -> None:
@@ -151,4 +155,3 @@ def test_deterministic_ordering_uses_activity_id_tiebreaker() -> None:
     )
 
     assert [a.activity_id for a in result.allocations] == ["A1", "A2"]
-

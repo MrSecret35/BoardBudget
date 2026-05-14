@@ -77,9 +77,9 @@ The Dashboard tab shows total estimated value, total allocated value, remaining 
 
 ## Calendar Behavior
 
-Planning still allocates work Monday to Friday only.
+Planning allocates only on working days. Saturdays, Sundays, and Italian public holidays are non-working days and receive no allocations.
 
-The visible calendar includes every calendar date between the planned start and planned end, including Saturdays, Sundays, and Italian public holidays. Weekend and holiday rows are shown in light red in the Streamlit calendar view. Holidays are visual only in v2; they are not capacity blockers beyond the existing Monday-Friday planning rule.
+The visible calendar includes every calendar date between the planned start and planned end, including weekends and Italian public holidays. Weekend and holiday rows are shown in light red. The calendar uses a resizable grid view, with date/day columns pinned and person columns made wider for activity chunks such as `1 Supporto GOSP 2026 4h + 2 Assessment fase 2 4h`.
 
 The raw allocation sheet does not include fake weekend or holiday allocation rows.
 
@@ -106,17 +106,17 @@ The app replaces these generated sheets when recalculating:
 - `07_Warnings`
 - `08_Activity_Economics`
 
-Existing older boards remain loadable. Missing v2 columns are defaulted safely and written the next time the board is saved.
+Existing older boards remain loadable. Missing v2/v3 columns are defaulted safely and written the next time the board is saved.
 
 ## Planning Rules
 
 - Planning is in hours.
 - Default capacity is 8 hours per person per day.
-- Working days are Monday to Friday.
-- Holidays, vacations, sick leave, and part-time exceptions are ignored for allocation in v2.
+- Working days are Monday to Friday, excluding Italian public holidays.
+- Vacations, sick leave, and part-time exceptions are ignored for allocation in v3.
 - Activity `order` is a priority, not a global dependency.
 - Shared activities are independent per person.
-- If an activity is assigned to multiple people, estimated hours are split equally.
+- Shared activity hours are no longer split equally. A shared activity has one global remaining-hours bucket, and assigned active people greedily consume it until the activity is complete.
 - Each person is filled up to daily capacity when possible.
 - `max_hours_per_day` limits each assigned person on that activity for that date.
 - A person can work on multiple activities in the same day.
@@ -127,15 +127,14 @@ Existing older boards remain loadable. Missing v2 columns are defaulted safely a
 
 ## Table Usability
 
-Column widths are configured for readability. Fully persistent manual column resizing depends on Streamlit table capabilities.
+The Calendar tab uses an AgGrid table with user-resizable columns and horizontal scrolling. Date/day columns and person columns are visually emphasized. Other editors remain simple Streamlit editors with configured column widths.
 
-## Known v2 Limitations
+## Known v3 Limitations
 
-- Italian holidays are visual only; they do not change capacity.
 - No manual timesheet or actual-hours tracking yet.
 - No costs different from selling prices yet.
 - No holiday calendar configuration beyond Italy.
-- No persistent manual column resizing beyond Streamlit column configuration.
+- Resizable grid behavior is used mainly for the calendar; input editors stay lightweight.
 - No authentication, multi-user coordination, database, or cloud sync.
 
 ## Future Ideas
