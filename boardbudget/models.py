@@ -29,6 +29,9 @@ class Activity:
     max_hours_per_day: float | None = None
     status: str = "PLANNED"
     notes: str = ""
+    estimated_days: float | None = None
+    daily_price: float | None = None
+    price_notes: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,4 +64,3 @@ class BoardData:
     activities: list[Activity] = field(default_factory=list)
     assignments: list[Assignment] = field(default_factory=list)
     warnings: list[WarningMessage] = field(default_factory=list)
-

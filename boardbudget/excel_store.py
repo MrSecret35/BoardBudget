@@ -11,21 +11,33 @@ from openpyxl import load_workbook
 from .config import (
     ACTIVITIES_SHEET,
     ASSIGNMENTS_SHEET,
+    ACTIVITY_ECONOMICS_SHEET,
     BOARD_SHEET,
     CALENDAR_SHEET,
     DASHBOARD_SHEET,
     DEFAULT_HOURS_PER_DAY,
     DEFAULT_WORKING_DAYS,
-    GENERATED_SHEETS,
     PEOPLE_SHEET,
     WARNINGS_SHEET,
 )
+from .estimates import normalize_estimates
 from .models import Activity, Assignment, BoardData, BoardSettings, Person, WarningMessage
 
 
 BOARD_COLUMNS = ["key", "value"]
 PEOPLE_COLUMNS = ["person_id", "name", "hours_per_day", "active"]
-ACTIVITY_COLUMNS = ["activity_id", "order", "name", "estimated_hours", "max_hours_per_day", "status", "notes"]
+ACTIVITY_COLUMNS = [
+    "activity_id",
+    "order",
+    "name",
+    "estimated_days",
+    "estimated_hours",
+    "max_hours_per_day",
+    "daily_price",
+    "status",
+    "notes",
+    "price_notes",
+]
 ASSIGNMENT_COLUMNS = ["activity_id", "person_id"]
 
 
@@ -119,10 +131,13 @@ def _activities_to_df(activities: list[Activity]) -> pd.DataFrame:
                 "activity_id": a.activity_id,
                 "order": a.order,
                 "name": a.name,
+                "estimated_days": a.estimated_days if a.estimated_days is not None else (a.estimated_hours / 8 if a.estimated_hours else None),
                 "estimated_hours": a.estimated_hours,
                 "max_hours_per_day": a.max_hours_per_day,
+                "daily_price": a.daily_price if a.daily_price is not None else 0,
                 "status": a.status,
                 "notes": a.notes,
+                "price_notes": a.price_notes,
             }
             for a in activities
         ],
@@ -166,6 +181,22 @@ def create_new_board_file(path: Path, board_name: str, start_date: date) -> None
         pd.DataFrame(columns=["date", "person_id", "person_name", "activity_id", "activity_name", "hours"]),
         pd.DataFrame(columns=["metric", "value"]),
         pd.DataFrame(columns=["level", "code", "message"]),
+        pd.DataFrame(
+            columns=[
+                "activity_id",
+                "activity_name",
+                "status",
+                "estimated_hours",
+                "estimated_person_days",
+                "daily_price",
+                "estimated_value",
+                "allocated_hours",
+                "allocated_person_days",
+                "allocated_value",
+                "remaining_allocated_hours_from_today",
+                "remaining_allocated_value_from_today",
+            ]
+        ),
     )
 
 
@@ -204,19 +235,31 @@ def load_board(path: Path) -> BoardData:
     activities_df, warning = _read_sheet(path, ACTIVITIES_SHEET, ACTIVITY_COLUMNS)
     if warning:
         warnings.append(warning)
-    activities = [
-        Activity(
-            activity_id=_as_str(row["activity_id"]),
-            order=_as_int(row["order"], None),
-            name=_as_str(row["name"]),
-            estimated_hours=_as_float(row["estimated_hours"], 0) or 0,
-            max_hours_per_day=_as_float(row["max_hours_per_day"], None),
-            status=_as_str(row["status"], "PLANNED").upper(),
-            notes=_as_str(row["notes"]),
+    activities = []
+    for _, row in activities_df.iterrows():
+        if not any(_blank_to_none(row[column]) is not None for column in ACTIVITY_COLUMNS):
+            continue
+        activity_id = _as_str(row["activity_id"])
+        estimated_days, estimated_hours, estimate_warnings = normalize_estimates(
+            activity_id,
+            row["estimated_days"],
+            row["estimated_hours"],
         )
-        for _, row in activities_df.iterrows()
-        if any(_blank_to_none(row[column]) is not None for column in ACTIVITY_COLUMNS)
-    ]
+        warnings.extend(estimate_warnings)
+        activities.append(
+            Activity(
+                activity_id=activity_id,
+                order=_as_int(row["order"], None),
+                name=_as_str(row["name"]),
+                estimated_hours=estimated_hours,
+                max_hours_per_day=_as_float(row["max_hours_per_day"], None),
+                status=_as_str(row["status"], "PLANNED").upper(),
+                notes=_as_str(row["notes"]),
+                estimated_days=estimated_days,
+                daily_price=_as_float(row["daily_price"], 0),
+                price_notes=_as_str(row["price_notes"]),
+            )
+        )
 
     assignments_df, warning = _read_sheet(path, ASSIGNMENTS_SHEET, ASSIGNMENT_COLUMNS)
     if warning:
@@ -235,7 +278,13 @@ def save_board(path: Path, board_data: BoardData) -> None:
     _write_input_sheets(path, board_data)
 
 
-def write_generated_sheets(path: Path, calendar_df: pd.DataFrame, dashboard_df: pd.DataFrame, warnings_df: pd.DataFrame) -> None:
+def write_generated_sheets(
+    path: Path,
+    calendar_df: pd.DataFrame,
+    dashboard_df: pd.DataFrame,
+    warnings_df: pd.DataFrame,
+    activity_economics_df: pd.DataFrame | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         create_new_board_file(path, path.stem, date.today())
@@ -243,6 +292,8 @@ def write_generated_sheets(path: Path, calendar_df: pd.DataFrame, dashboard_df: 
         calendar_df.to_excel(writer, sheet_name=CALENDAR_SHEET, index=False)
         dashboard_df.to_excel(writer, sheet_name=DASHBOARD_SHEET, index=False)
         warnings_df.to_excel(writer, sheet_name=WARNINGS_SHEET, index=False)
+        if activity_economics_df is not None:
+            activity_economics_df.to_excel(writer, sheet_name=ACTIVITY_ECONOMICS_SHEET, index=False)
 
 
 def duplicate_board(source: Path, target: Path) -> None:
@@ -259,4 +310,3 @@ def get_sheet_names(path: Path) -> list[str]:
     if not path.exists():
         return []
     return load_workbook(path, read_only=True).sheetnames
-

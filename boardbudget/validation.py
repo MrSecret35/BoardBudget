@@ -72,6 +72,23 @@ def validate_board_data(board_data: BoardData) -> list[WarningMessage]:
             warnings.append(WarningMessage("WARNING", "INVALID_STATUS", f"Activity '{label}' has invalid status '{activity.status}'; PLANNED will be used."))
         if activity.max_hours_per_day is not None and not _is_positive_number(activity.max_hours_per_day):
             warnings.append(WarningMessage("WARNING", "INVALID_MAX_HOURS", f"Activity '{label}' has invalid max_hours_per_day; 8 will be used."))
+        if activity.estimated_days is not None and _is_positive_number(activity.estimated_days) and _is_positive_number(activity.estimated_hours):
+            if abs(float(activity.estimated_days) * 8 - float(activity.estimated_hours)) > 0.000001:
+                warnings.append(
+                    WarningMessage(
+                        "WARNING",
+                        "ESTIMATE_DAYS_HOURS_MISMATCH",
+                        f"Activity {label} has estimated_days and estimated_hours inconsistent; estimated_hours was used.",
+                    )
+                )
+        if activity.status == "PLANNED" and not _is_positive_number(activity.daily_price):
+            warnings.append(
+                WarningMessage(
+                    "WARNING",
+                    "MISSING_DAILY_PRICE",
+                    f"Activity {label} has no valid daily_price; economic value defaults to 0.",
+                )
+            )
 
     activity_id_set = set(activity_ids)
     active_person_ids = {p.person_id.strip() for p in board_data.people if not _is_blank(p.person_id) and p.active}
@@ -100,4 +117,3 @@ def validate_board_data(board_data: BoardData) -> list[WarningMessage]:
             warnings.append(WarningMessage("WARNING", "ACTIVITY_WITHOUT_ASSIGNMENT", f"Activity '{activity.activity_id}' has no active assignments and will not be planned."))
 
     return warnings
-

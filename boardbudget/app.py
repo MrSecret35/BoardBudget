@@ -6,7 +6,12 @@ from pathlib import Path
 import streamlit as st
 
 from boardbudget.config import APP_NAME, BOARDS_DIR
-from boardbudget.dashboard import build_calendar_dataframe, build_dashboard_dataframe, build_warnings_dataframe
+from boardbudget.dashboard import (
+    build_activity_economics_dataframe,
+    build_calendar_dataframe,
+    build_dashboard_dataframe,
+    build_warnings_dataframe,
+)
 from boardbudget.excel_store import create_new_board_file, duplicate_board, list_board_files, load_board, save_board, write_generated_sheets
 from boardbudget.planner_engine import calculate_plan
 from boardbudget.sample_data import create_sample_board
@@ -31,9 +36,10 @@ def _recalculate_board(path: Path) -> None:
     board_data = load_board(path)
     result = calculate_plan(board_data)
     calendar_df = build_calendar_dataframe(result, board_data)
+    economics_df = build_activity_economics_dataframe(result, board_data)
     dashboard_df = build_dashboard_dataframe(result, board_data)
     warnings_df = build_warnings_dataframe(result.warnings)
-    write_generated_sheets(path, calendar_df, dashboard_df, warnings_df)
+    write_generated_sheets(path, calendar_df, dashboard_df, warnings_df, economics_df)
 
 
 def _create_sidebar() -> Path | None:
@@ -103,13 +109,14 @@ def main() -> None:
     board_data = load_board(selected)
     result = calculate_plan(board_data)
     calendar_df = build_calendar_dataframe(result, board_data)
+    economics_df = build_activity_economics_dataframe(result, board_data)
     dashboard_df = build_dashboard_dataframe(result, board_data)
     warnings_df = build_warnings_dataframe(result.warnings)
 
     tabs = st.tabs(["Dashboard", "People", "Activities", "Assignments", "Calendar", "Warnings", "Raw Excel Info"])
 
     with tabs[0]:
-        render_dashboard(board_data, dashboard_df, result)
+        render_dashboard(board_data, dashboard_df, economics_df, result)
 
     with tabs[1]:
         people = render_people_editor(board_data)
@@ -136,7 +143,7 @@ def main() -> None:
             st.rerun()
 
     with tabs[4]:
-        render_calendar(calendar_df)
+        render_calendar(calendar_df, board_data)
 
     with tabs[5]:
         render_warnings(warnings_df)

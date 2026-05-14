@@ -22,10 +22,10 @@ def create_sample_board(path: Path) -> None:
             Person("P2", "Colleague", 8, True),
         ],
         activities=[
-            Activity("A1", 1, "Analysis", 16, 8, "PLANNED", ""),
-            Activity("A2", 2, "Shared development", 40, 8, "PLANNED", ""),
-            Activity("A3", 3, "Support and testing", 24, 4, "PLANNED", ""),
-            Activity("A4", 4, "Final check", 8, 8, "PLANNED", ""),
+            Activity("A1", 1, "Analysis", 16, 8, "PLANNED", "", 2, 450, ""),
+            Activity("A2", 2, "Shared development", 40, 8, "PLANNED", "", 5, 500, ""),
+            Activity("A3", 3, "Support and testing", 24, 4, "PLANNED", "", 3, 400, "max 4h/day"),
+            Activity("A4", 4, "Final check", 8, 8, "PLANNED", "", 1, 450, ""),
         ],
         assignments=[
             Assignment("A1", "P1"),
@@ -37,4 +37,3 @@ def create_sample_board(path: Path) -> None:
         ],
     )
     save_board(path, board)
-
