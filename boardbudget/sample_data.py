@@ -18,8 +18,8 @@ def create_sample_board(path: Path) -> None:
     board = BoardData(
         settings=BoardSettings(board_name="Pitagora Sample", start_date=start_date),
         people=[
-            Person("P1", "Giorgio", 8, True),
-            Person("P2", "Colleague", 8, True),
+            Person("P1", "Giorgio", 8, True, 300),
+            Person("P2", "Colleague", 8, True, 260),
         ],
         activities=[
             Activity("A1", 1, "Analysis", 16, 8, "PLANNED", "", 2, 450, ""),

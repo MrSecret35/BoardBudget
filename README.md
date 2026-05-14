@@ -39,19 +39,28 @@ The app stores boards in the local `boards/` folder.
 
 ## Create And Edit A Board
 
-From the sidebar you can create a new board, create the Pitagora sample board, open an existing `.xlsx` board, duplicate the selected board, recalculate generated sheets, and download the current board.
+From the sidebar you can create a new board, create the Pitagora sample board, open an existing `.xlsx` board, duplicate the selected board, recalculate generated sheets, and download the current board. The download button prepares a fresh Excel export by recalculating generated sheets before serving the file.
 
 BoardBudget uses editable tables with explicit save buttons. It does not autosave on every cell edit.
 
 Use the tabs to edit:
 
 - `People`: `person_id`, `name`, `hours_per_day`, `active`
+- People also include `daily_cost`, the delivery cost for one 8-hour person-day.
 - `Activities`: `activity_id`, `order`, `name`, `estimated_days`, `estimated_hours`, `max_hours_per_day`, `daily_price`, `status`, `notes`, `price_notes`
 - `Assignments`: one row per planned activity with multiselect people tags
 
 The advanced assignment expander still exposes the normalized raw table. Excel also stores assignments as normalized rows: `activity_id`, `person_id`.
 
 After changing inputs, click the relevant save button. Then use **Recalculate current board** in the sidebar to regenerate calendar, dashboard, warnings, and economics sheets.
+
+The sidebar also includes **⚙️ Settings**:
+
+- font size scale: Small, Normal, Large
+- theme preference: System/default, Light, Dark
+- non-working day color for weekend and holiday rows
+
+Settings are kept local in `boardbudget_settings.json` when saved.
 
 ## Estimated Effort
 
@@ -66,20 +75,33 @@ Rules:
 
 ## Economic Dashboard
 
-Activities can include `daily_price`, the selling price for 1 person-day / 8 hours.
+Activities can include `daily_price`, the selling or revenue price for 1 person-day / 8 hours.
+
+People can include `daily_cost`, the delivery cost for 1 person-day / 8 hours.
 
 ```text
 estimated_value = estimated_hours / 8 * daily_price
 allocated_value = allocated_hours / 8 * daily_price
+delivery_cost = allocated_hours / 8 * person.daily_cost
+expected_margin = total_estimated_value - estimated_delivery_cost
 ```
 
-The Dashboard tab shows total estimated value, total allocated value, remaining allocated value from today, and an activity economics table.
+The Dashboard tab shows:
+
+- Valore attività
+- Erogato fino ad oggi
+- Stima erogazione
+- Margine previsto
+- Risparmio teorico se finito oggi
+- Activity economics and person economics tables
+
+The theoretical saving assumes future scheduled delivery cost is avoided if the project is actually finished today.
 
 ## Calendar Behavior
 
 Planning allocates only on working days. Saturdays, Sundays, and Italian public holidays are non-working days and receive no allocations.
 
-The visible calendar includes every calendar date between the planned start and planned end, including weekends and Italian public holidays. Weekend and holiday rows are shown in light red. The calendar uses a resizable grid view, with date/day columns pinned and person columns made wider for activity chunks such as `1 Supporto GOSP 2026 4h + 2 Assessment fase 2 4h`.
+The visible calendar includes every calendar date between the planned start and planned end, including weekends and Italian public holidays. Weekend and holiday rows use a soft configurable highlight color. The calendar uses a sortable, resizable grid view, with date/day columns pinned and person columns made wider for activity chunks such as `1 Supporto GOSP 2026 4h + 2 Assessment fase 2 4h`.
 
 The raw allocation sheet does not include fake weekend or holiday allocation rows.
 
@@ -105,6 +127,7 @@ The app replaces these generated sheets when recalculating:
 - `06_Dashboard`
 - `07_Warnings`
 - `08_Activity_Economics`
+- `10_Person_Economics`
 
 Existing older boards remain loadable. Missing v2/v3 columns are defaulted safely and written the next time the board is saved.
 
@@ -127,14 +150,16 @@ Existing older boards remain loadable. Missing v2/v3 columns are defaulted safel
 
 ## Table Usability
 
-The Calendar tab uses an AgGrid table with user-resizable columns and horizontal scrolling. Date/day columns and person columns are visually emphasized. Other editors remain simple Streamlit editors with configured column widths.
+Display tables use AgGrid where practical, with user-resizable columns, sortable headers, and horizontal scrolling. Date/day columns and person columns are visually emphasized in the calendar. Sorting is UI-only and does not rewrite Excel. Editing tables remain lightweight Streamlit editors with configured column widths.
 
 ## Known v3 Limitations
 
 - No manual timesheet or actual-hours tracking yet.
-- No costs different from selling prices yet.
+- Actual completion is still manually/perceptually determined; there is no automatic "finished" signal.
+- No detailed timesheet-based cost accounting yet; delivery cost is planned from calendar allocations and person daily cost.
 - No holiday calendar configuration beyond Italy.
 - Resizable grid behavior is used mainly for the calendar; input editors stay lightweight.
+- Dynamic full theme switching depends on Streamlit limitations; BoardBudget applies a lightweight app-level CSS preference.
 - No authentication, multi-user coordination, database, or cloud sync.
 
 ## Future Ideas

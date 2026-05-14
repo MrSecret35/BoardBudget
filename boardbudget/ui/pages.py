@@ -20,7 +20,7 @@ from boardbudget.dashboard import (
 from boardbudget.estimates import normalize_estimates
 from boardbudget.excel_store import get_sheet_names
 from boardbudget.models import Activity, Assignment, BoardData, Person
-from boardbudget.ui.aggrid import render_calendar_grid, render_raw_calendar_grid
+from boardbudget.ui.aggrid import render_calendar_grid, render_grid, render_raw_calendar_grid
 from boardbudget.ui.components import (
     activity_column_config,
     people_column_config,
@@ -66,29 +66,72 @@ def _optional_int(value: object, field_name: str) -> int | None:
     return int(number) if number is not None else None
 
 
-def render_dashboard(board_data: BoardData, dashboard_df: pd.DataFrame, economics_df: pd.DataFrame, result) -> None:
+def _grid_or_empty(df: pd.DataFrame, empty_message: str, key: str, height: int = 360, column_widths: dict[str, int] | None = None) -> None:
+    if df.empty:
+        st.info(empty_message)
+    else:
+        render_grid(df, key=key, height=height, column_widths=column_widths)
+
+
+def render_dashboard(board_data: BoardData, dashboard_df: pd.DataFrame, economics_df: pd.DataFrame, person_economics_df: pd.DataFrame, result) -> None:
     cols = st.columns(4)
     values = dict(zip(dashboard_df.get("metric", []), dashboard_df.get("value", [])))
     cols[0].metric("Allocated hours", values.get("total_allocated_hours", 0))
     cols[1].metric("Working days", values.get("total_working_days", 0))
     cols[2].metric("Plan end", values.get("planned_end_date", ""))
     cols[3].metric("Remaining hours", values.get("remaining_hours_from_today", 0))
-    show_dataframe_or_empty(dashboard_df, "No dashboard metrics yet.")
+    _grid_or_empty(dashboard_df, "No dashboard metrics yet.", "dashboard_metrics_grid", 360, {"metric": 320, "value": 220})
     st.subheader("People")
-    show_dataframe_or_empty(build_person_summary_dataframe(result, board_data), "No people allocation yet.")
+    _grid_or_empty(build_person_summary_dataframe(result, board_data), "No people allocation yet.", "person_summary_grid")
     st.subheader("Activities")
-    show_dataframe_or_empty(build_activity_summary_dataframe(result, board_data), "No activity allocation yet.")
+    _grid_or_empty(build_activity_summary_dataframe(result, board_data), "No activity allocation yet.", "activity_summary_grid")
     st.subheader("Economic dashboard")
-    econ_cols = st.columns(4)
-    econ_cols[0].metric("Total estimated value", _eur(values.get("total_estimated_value", 0)))
-    econ_cols[1].metric("Total allocated value", _eur(values.get("total_allocated_value", 0)))
-    econ_cols[2].metric("Remaining value", _eur(values.get("remaining_allocated_value_from_today", 0)))
-    econ_cols[3].metric("If finished today", _eur(values.get("if_finished_today.remaining_allocated_value", 0)))
-    show_dataframe_or_empty(economics_df, "No economic activity rows yet.")
+    econ_cols = st.columns(3)
+    econ_cols[0].metric("Valore attività", _eur(values.get("total_estimated_value", 0)))
+    econ_cols[1].metric("Stima erogazione", _eur(values.get("estimated_delivery_cost", 0)))
+    econ_cols[2].metric("Margine previsto", _eur(values.get("expected_margin", 0)))
+    econ_cols_2 = st.columns(3)
+    econ_cols_2[0].metric("Erogato fino ad oggi", _eur(values.get("delivered_cost_until_today", 0)))
+    econ_cols_2[1].metric("Costo residuo", _eur(values.get("remaining_delivery_cost_from_today", 0)))
+    econ_cols_2[2].metric("Risparmio teorico se finito oggi", _eur(values.get("if_finished_today.theoretical_saving", 0)))
+    st.subheader("Activity economics")
+    _grid_or_empty(economics_df, "No economic activity rows yet.", "activity_economics_grid", 420, _activity_economics_widths(economics_df))
+    st.subheader("Person economics")
+    _grid_or_empty(person_economics_df, "No person economics rows yet.", "person_economics_grid", 360, _person_economics_widths())
+
+
+def _activity_economics_widths(df: pd.DataFrame) -> dict[str, int]:
+    widths = {"activity_id": 110, "activity_name": 320, "status": 130, "expected_margin_percentage": 150}
+    for column in df.columns:
+        if column not in widths:
+            widths[column] = 170
+    return widths
+
+
+def _person_economics_widths() -> dict[str, int]:
+    return {
+        "person_id": 100,
+        "person_name": 220,
+        "daily_cost": 140,
+        "allocated_hours_total": 170,
+        "allocated_person_days_total": 190,
+        "estimated_delivery_cost": 180,
+        "delivered_hours_until_today": 190,
+        "delivered_cost_until_today": 190,
+        "remaining_hours_from_today": 190,
+        "remaining_delivery_cost_from_today": 220,
+        "allocated_until": 150,
+    }
 
 
 def render_people_editor(board_data: BoardData) -> list[Person] | None:
-    df = pd.DataFrame([p.__dict__ for p in board_data.people], columns=["person_id", "name", "hours_per_day", "active"])
+    df = pd.DataFrame(
+        [
+            {"person_id": p.person_id, "name": p.name, "hours_per_day": p.hours_per_day, "daily_cost": p.daily_cost if p.daily_cost is not None else 0, "active": p.active}
+            for p in board_data.people
+        ],
+        columns=["person_id", "name", "hours_per_day", "daily_cost", "active"],
+    )
     edited = st.data_editor(
         df,
         use_container_width=True,
@@ -104,6 +147,7 @@ def render_people_editor(board_data: BoardData) -> list[Person] | None:
                 name=str(row.get("name", "")).strip(),
                 hours_per_day=row.get("hours_per_day") if pd.notna(row.get("hours_per_day")) else None,
                 active=bool(row.get("active", True)),
+                daily_cost=row.get("daily_cost") if pd.notna(row.get("daily_cost")) else 0,
             )
             for _, row in edited.iterrows()
             if any(pd.notna(row.get(column)) and str(row.get(column)).strip() != "" for column in edited.columns)
@@ -219,14 +263,14 @@ def render_assignments_editor(board_data: BoardData) -> list[Assignment] | None:
     return None
 
 
-def render_calendar(calendar_df: pd.DataFrame, board_data: BoardData) -> None:
+def render_calendar(calendar_df: pd.DataFrame, board_data: BoardData, non_working_day_color: str = "#fdecec") -> None:
     st.subheader("Pivot calendar")
     pivot_df = build_calendar_pivot_dataframe(calendar_df, board_data)
     if pivot_df.empty:
         st.info("No calendar allocations yet.")
     else:
         person_ids = [p.person_id for p in board_data.people if p.active]
-        render_calendar_grid(pivot_df, person_ids)
+        render_calendar_grid(pivot_df, person_ids, non_working_day_color)
     st.subheader("Raw allocations")
     if calendar_df.empty:
         st.info("No raw allocation rows yet.")
@@ -239,7 +283,7 @@ def render_warnings(warnings_df: pd.DataFrame) -> None:
         st.error("This board has validation or planning errors.")
     elif not warnings_df.empty and (warnings_df["level"] == "WARNING").any():
         st.warning("This board has warnings.")
-    show_dataframe_or_empty(warnings_df, "No warnings.")
+    _grid_or_empty(warnings_df, "No warnings.", "warnings_grid", 380, {"level": 120, "code": 220, "message": 600})
 
 
 def render_raw_excel_info(path: Path) -> None:
@@ -248,6 +292,6 @@ def render_raw_excel_info(path: Path) -> None:
     for sheet in get_sheet_names(path):
         st.write(f"- {sheet}")
     st.info(
-        f"`05_Calendar`, `06_Dashboard`, `07_Warnings`, and `08_Activity_Economics` are generated by the app. "
+        f"`05_Calendar`, `06_Dashboard`, `07_Warnings`, `08_Activity_Economics`, and `10_Person_Economics` are generated by the app. "
         f"Edit `{BOARD_SHEET}`, `{PEOPLE_SHEET}`, `{ACTIVITIES_SHEET}`, and `{ASSIGNMENTS_SHEET}` directly only if you want to work in Excel."
     )

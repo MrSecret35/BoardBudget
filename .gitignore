@@ -4,6 +4,7 @@ __pycache__/
 .env
 *.pyc
 .DS_Store
+boardbudget_settings.json
 streamlit-smoke*.log
 exports/*.xlsx
 boards/*.xlsx

@@ -18,6 +18,7 @@ class Person:
     name: str
     hours_per_day: float | None = None
     active: bool = True
+    daily_cost: float | None = None
 
 
 @dataclass

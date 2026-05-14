@@ -18,6 +18,7 @@ from .config import (
     DEFAULT_HOURS_PER_DAY,
     DEFAULT_WORKING_DAYS,
     PEOPLE_SHEET,
+    PERSON_ECONOMICS_SHEET,
     WARNINGS_SHEET,
 )
 from .estimates import normalize_estimates
@@ -25,7 +26,7 @@ from .models import Activity, Assignment, BoardData, BoardSettings, Person, Warn
 
 
 BOARD_COLUMNS = ["key", "value"]
-PEOPLE_COLUMNS = ["person_id", "name", "hours_per_day", "active"]
+PEOPLE_COLUMNS = ["person_id", "name", "hours_per_day", "daily_cost", "active"]
 ACTIVITY_COLUMNS = [
     "activity_id",
     "order",
@@ -119,7 +120,16 @@ def _settings_to_df(settings: BoardSettings) -> pd.DataFrame:
 
 def _people_to_df(people: list[Person]) -> pd.DataFrame:
     return pd.DataFrame(
-        [{"person_id": p.person_id, "name": p.name, "hours_per_day": p.hours_per_day, "active": p.active} for p in people],
+        [
+            {
+                "person_id": p.person_id,
+                "name": p.name,
+                "hours_per_day": p.hours_per_day,
+                "daily_cost": p.daily_cost if p.daily_cost is not None else 0,
+                "active": p.active,
+            }
+            for p in people
+        ],
         columns=PEOPLE_COLUMNS,
     )
 
@@ -197,6 +207,21 @@ def create_new_board_file(path: Path, board_name: str, start_date: date) -> None
                 "remaining_allocated_value_from_today",
             ]
         ),
+        pd.DataFrame(
+            columns=[
+                "person_id",
+                "person_name",
+                "daily_cost",
+                "allocated_hours_total",
+                "allocated_person_days_total",
+                "estimated_delivery_cost",
+                "delivered_hours_until_today",
+                "delivered_cost_until_today",
+                "remaining_hours_from_today",
+                "remaining_delivery_cost_from_today",
+                "allocated_until",
+            ]
+        ),
     )
 
 
@@ -227,6 +252,7 @@ def load_board(path: Path) -> BoardData:
             name=_as_str(row["name"]),
             hours_per_day=_as_float(row["hours_per_day"], None),
             active=_as_bool(row["active"], True),
+            daily_cost=_as_float(row["daily_cost"], 0),
         )
         for _, row in people_df.iterrows()
         if any(_blank_to_none(row[column]) is not None for column in PEOPLE_COLUMNS)
@@ -284,6 +310,7 @@ def write_generated_sheets(
     dashboard_df: pd.DataFrame,
     warnings_df: pd.DataFrame,
     activity_economics_df: pd.DataFrame | None = None,
+    person_economics_df: pd.DataFrame | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
@@ -294,6 +321,8 @@ def write_generated_sheets(
         warnings_df.to_excel(writer, sheet_name=WARNINGS_SHEET, index=False)
         if activity_economics_df is not None:
             activity_economics_df.to_excel(writer, sheet_name=ACTIVITY_ECONOMICS_SHEET, index=False)
+        if person_economics_df is not None:
+            person_economics_df.to_excel(writer, sheet_name=PERSON_ECONOMICS_SHEET, index=False)
 
 
 def duplicate_board(source: Path, target: Path) -> None:

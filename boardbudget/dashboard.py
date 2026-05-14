@@ -100,9 +100,18 @@ def build_dashboard_dataframe(result: PlanningResult, board_data: BoardData, tod
     remaining_from_today = sum(a.hours for a in allocations if a.date >= today)
     working_days = _working_days_between(planned_start, planned_end, board_data.settings.working_days)
     economics_df = build_activity_economics_dataframe(result, board_data, today)
+    person_economics_df = build_person_economics_dataframe(result, board_data, today)
     total_estimated_value = economics_df["estimated_value"].sum() if not economics_df.empty else 0
     total_allocated_value = economics_df["allocated_value"].sum() if not economics_df.empty else 0
     remaining_allocated_value = economics_df["remaining_allocated_value_from_today"].sum() if not economics_df.empty else 0
+    delivered_value = economics_df["delivered_value_until_today"].sum() if not economics_df.empty else 0
+    delivered_cost = person_economics_df["delivered_cost_until_today"].sum() if not person_economics_df.empty else 0
+    estimated_delivery_cost = person_economics_df["estimated_delivery_cost"].sum() if not person_economics_df.empty else 0
+    remaining_delivery_cost = person_economics_df["remaining_delivery_cost_from_today"].sum() if not person_economics_df.empty else 0
+    expected_margin = total_estimated_value - estimated_delivery_cost
+    expected_margin_percentage = (expected_margin / total_estimated_value * 100) if total_estimated_value else 0
+    delivered_margin = delivered_value - delivered_cost
+    remaining_margin = remaining_allocated_value - remaining_delivery_cost
     total_estimated_person_days = economics_df["estimated_person_days"].sum() if not economics_df.empty else 0
     average_daily_price = total_estimated_value / total_estimated_person_days if total_estimated_person_days else 0
 
@@ -124,10 +133,19 @@ def build_dashboard_dataframe(result: PlanningResult, board_data: BoardData, tod
         ("remaining_allocated_value_from_today", round(remaining_allocated_value, 2)),
         ("average_daily_price_weighted", round(average_daily_price, 2)),
         ("value_until_planned_end", round(total_allocated_value, 2)),
+        ("delivered_cost_until_today", round(delivered_cost, 2)),
+        ("estimated_delivery_cost", round(estimated_delivery_cost, 2)),
+        ("remaining_delivery_cost_from_today", round(remaining_delivery_cost, 2)),
+        ("expected_margin", round(expected_margin, 2)),
+        ("expected_margin_percentage", round(expected_margin_percentage, 2)),
+        ("delivered_margin_until_today", round(delivered_margin, 2)),
+        ("remaining_margin_from_today", round(remaining_margin, 2)),
         ("if_finished_today.remaining_allocated_hours", round(remaining_from_today, 2)),
         ("if_finished_today.remaining_person_days", round(remaining_from_today / board_data.settings.hours_per_day, 2) if board_data.settings.hours_per_day else 0),
         ("if_finished_today.remaining_calendar_days_until_planned_end", (planned_end - today).days if planned_end and planned_end >= today else 0),
         ("if_finished_today.remaining_allocated_value", round(remaining_allocated_value, 2)),
+        ("if_finished_today.remaining_delivery_cost", round(remaining_delivery_cost, 2)),
+        ("if_finished_today.theoretical_saving", round(remaining_delivery_cost, 2)),
     ]
 
     for person in sorted([p for p in board_data.people if p.active], key=lambda p: p.person_id):
@@ -163,14 +181,25 @@ def build_person_summary_dataframe(result: PlanningResult, board_data: BoardData
 def build_activity_economics_dataframe(result: PlanningResult, board_data: BoardData, today: date | None = None) -> pd.DataFrame:
     today = today or date.today()
     rows: list[dict[str, object]] = []
+    person_cost_by_id = {person.person_id: (person.daily_cost if person.daily_cost and person.daily_cost > 0 else 0) for person in board_data.people}
     for activity in board_data.activities:
         if activity.status != STATUS_PLANNED:
             continue
         daily_price = activity.daily_price if activity.daily_price and activity.daily_price > 0 else 0
-        allocated_hours = sum(a.hours for a in result.allocations if a.activity_id == activity.activity_id)
-        remaining_hours = sum(a.hours for a in result.allocations if a.activity_id == activity.activity_id and a.date >= today)
+        activity_allocations = [a for a in result.allocations if a.activity_id == activity.activity_id]
+        allocated_hours = sum(a.hours for a in activity_allocations)
+        delivered_hours = sum(a.hours for a in activity_allocations if a.date <= today)
+        remaining_hours = sum(a.hours for a in activity_allocations if a.date > today)
+        delivered_cost = sum((a.hours / 8) * person_cost_by_id.get(a.person_id, 0) for a in activity_allocations if a.date <= today)
+        estimated_delivery_cost = sum((a.hours / 8) * person_cost_by_id.get(a.person_id, 0) for a in activity_allocations)
+        remaining_delivery_cost = sum((a.hours / 8) * person_cost_by_id.get(a.person_id, 0) for a in activity_allocations if a.date > today)
         estimated_person_days = activity.estimated_hours / 8 if activity.estimated_hours else 0
         allocated_person_days = allocated_hours / 8 if allocated_hours else 0
+        allocated_value = allocated_person_days * daily_price
+        delivered_value = (delivered_hours / 8) * daily_price
+        remaining_value = (remaining_hours / 8) * daily_price
+        expected_margin = (estimated_person_days * daily_price) - estimated_delivery_cost
+        expected_margin_percentage = (expected_margin / (estimated_person_days * daily_price) * 100) if estimated_person_days and daily_price else 0
         rows.append(
             {
                 "activity_id": activity.activity_id,
@@ -182,9 +211,17 @@ def build_activity_economics_dataframe(result: PlanningResult, board_data: Board
                 "estimated_value": round(estimated_person_days * daily_price, 2),
                 "allocated_hours": round(allocated_hours, 2),
                 "allocated_person_days": round(allocated_person_days, 2),
-                "allocated_value": round(allocated_person_days * daily_price, 2),
+                "allocated_value": round(allocated_value, 2),
                 "remaining_allocated_hours_from_today": round(remaining_hours, 2),
-                "remaining_allocated_value_from_today": round((remaining_hours / 8) * daily_price, 2),
+                "remaining_allocated_value_from_today": round(remaining_value, 2),
+                "delivered_hours_until_today": round(delivered_hours, 2),
+                "delivered_value_until_today": round(delivered_value, 2),
+                "delivered_cost_until_today": round(delivered_cost, 2),
+                "estimated_delivery_cost": round(estimated_delivery_cost, 2),
+                "remaining_delivery_cost_from_today": round(remaining_delivery_cost, 2),
+                "expected_margin": round(expected_margin, 2),
+                "expected_margin_percentage": round(expected_margin_percentage, 2),
+                "theoretical_saving_if_finished_today": round(remaining_delivery_cost, 2),
             }
         )
     return pd.DataFrame(
@@ -202,5 +239,56 @@ def build_activity_economics_dataframe(result: PlanningResult, board_data: Board
             "allocated_value",
             "remaining_allocated_hours_from_today",
             "remaining_allocated_value_from_today",
+            "delivered_hours_until_today",
+            "delivered_value_until_today",
+            "delivered_cost_until_today",
+            "estimated_delivery_cost",
+            "remaining_delivery_cost_from_today",
+            "expected_margin",
+            "expected_margin_percentage",
+            "theoretical_saving_if_finished_today",
+        ],
+    )
+
+
+def build_person_economics_dataframe(result: PlanningResult, board_data: BoardData, today: date | None = None) -> pd.DataFrame:
+    today = today or date.today()
+    rows: list[dict[str, object]] = []
+    for person in sorted([p for p in board_data.people if p.active], key=lambda p: p.person_id):
+        daily_cost = person.daily_cost if person.daily_cost and person.daily_cost > 0 else 0
+        allocations = [a for a in result.allocations if a.person_id == person.person_id]
+        total_hours = sum(a.hours for a in allocations)
+        delivered_hours = sum(a.hours for a in allocations if a.date <= today)
+        remaining_hours = sum(a.hours for a in allocations if a.date > today)
+        allocated_until = max((a.date for a in allocations), default=None)
+        rows.append(
+            {
+                "person_id": person.person_id,
+                "person_name": person.name,
+                "daily_cost": round(daily_cost, 2),
+                "allocated_hours_total": round(total_hours, 2),
+                "allocated_person_days_total": round(total_hours / 8, 2),
+                "estimated_delivery_cost": round((total_hours / 8) * daily_cost, 2),
+                "delivered_hours_until_today": round(delivered_hours, 2),
+                "delivered_cost_until_today": round((delivered_hours / 8) * daily_cost, 2),
+                "remaining_hours_from_today": round(remaining_hours, 2),
+                "remaining_delivery_cost_from_today": round((remaining_hours / 8) * daily_cost, 2),
+                "allocated_until": allocated_until.isoformat() if allocated_until else "",
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "person_id",
+            "person_name",
+            "daily_cost",
+            "allocated_hours_total",
+            "allocated_person_days_total",
+            "estimated_delivery_cost",
+            "delivered_hours_until_today",
+            "delivered_cost_until_today",
+            "remaining_hours_from_today",
+            "remaining_delivery_cost_from_today",
+            "allocated_until",
         ],
     )

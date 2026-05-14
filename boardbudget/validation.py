@@ -51,6 +51,14 @@ def validate_board_data(board_data: BoardData) -> list[WarningMessage]:
             warnings.append(
                 WarningMessage("WARNING", "INVALID_PERSON_HOURS", f"Person '{person.person_id}' has invalid hours_per_day; board default will be used.")
             )
+        if person.active and not _is_positive_number(person.daily_cost):
+            warnings.append(
+                WarningMessage(
+                    "WARNING",
+                    "MISSING_DAILY_COST",
+                    f"Person {person.person_id} has no valid daily_cost; delivery cost defaults to 0.",
+                )
+            )
 
     activity_ids = [a.activity_id.strip() for a in board_data.activities if not _is_blank(a.activity_id)]
     for idx, activity in enumerate(board_data.activities, start=2):

@@ -28,6 +28,7 @@ def people_column_config() -> dict[str, object]:
         "person_id": st.column_config.TextColumn("person_id", width="small"),
         "name": st.column_config.TextColumn("name", width="medium"),
         "hours_per_day": st.column_config.NumberColumn("hours_per_day", width="small"),
+        "daily_cost": st.column_config.NumberColumn("daily_cost", width="small"),
         "active": st.column_config.CheckboxColumn("active", width="small"),
     }
 

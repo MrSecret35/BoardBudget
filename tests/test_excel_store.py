@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import date
+from io import BytesIO
 
 import pandas as pd
 from openpyxl import load_workbook
 
 from boardbudget.excel_store import create_new_board_file, load_board, save_board, write_generated_sheets
+from boardbudget.export import prepare_board_download_file
 from boardbudget.models import Activity, Assignment, BoardData, BoardSettings, Person
+from boardbudget.sample_data import create_sample_board
 
 
 def test_create_and_load_board_file(tmp_path) -> None:
@@ -67,3 +70,19 @@ def test_load_old_activity_sheet_defaults_v2_columns(tmp_path) -> None:
 
     assert loaded.activities[0].estimated_days == 5
     assert loaded.activities[0].daily_price == 0
+
+
+def test_prepare_board_download_file_contains_generated_sheets(tmp_path) -> None:
+    path = tmp_path / "sample.xlsx"
+    create_sample_board(path)
+
+    workbook_bytes = prepare_board_download_file(path)
+    workbook = load_workbook(BytesIO(workbook_bytes), read_only=True)
+
+    assert {"05_Calendar", "06_Dashboard", "07_Warnings", "08_Activity_Economics", "10_Person_Economics"}.issubset(set(workbook.sheetnames))
+    assert workbook["05_Calendar"].max_row > 1
+    assert workbook["05_Calendar"].max_column >= 6
+    assert workbook["06_Dashboard"].max_row > 1
+    assert workbook["07_Warnings"].max_column == 3
+    assert workbook["08_Activity_Economics"].max_row > 1
+    assert workbook["10_Person_Economics"].max_row > 1
