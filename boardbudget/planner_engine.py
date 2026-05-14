@@ -52,10 +52,21 @@ def _dedup_warnings(warnings: list[WarningMessage]) -> list[WarningMessage]:
     return unique
 
 
+def _confirmed_absence_hours_by_person_day(board_data: BoardData, active_person_ids: set[str]) -> dict[tuple[date, str], float]:
+    absences: dict[tuple[date, str], float] = {}
+    for absence in board_data.absences:
+        if absence.absence_code != "X" or absence.person_id not in active_person_ids or absence.hours not in {4, 8, 4.0, 8.0}:
+            continue
+        key = (absence.date, absence.person_id)
+        absences[key] = max(absences.get(key, 0), float(absence.hours))
+    return absences
+
+
 def calculate_plan(board_data: BoardData, today: date | None = None) -> PlanningResult:
     warnings = list(board_data.warnings) + validate_board_data(board_data)
     people_by_id: dict[str, Person] = {p.person_id: p for p in board_data.people if p.person_id and p.active}
     activities_by_id: dict[str, Activity] = {a.activity_id: a for a in board_data.activities if a.activity_id}
+    confirmed_absences = _confirmed_absence_hours_by_person_day(board_data, set(people_by_id))
 
     assignment_map: dict[str, list[str]] = {}
     seen_assignments: set[tuple[str, str]] = set()
@@ -93,7 +104,9 @@ def calculate_plan(board_data: BoardData, today: date | None = None) -> Planning
             continue
 
         for person in sorted(people_by_id.values(), key=lambda p: p.person_id):
-            daily_remaining = _positive_or_default(person.hours_per_day, board_data.settings.hours_per_day)
+            base_capacity = _positive_or_default(person.hours_per_day, board_data.settings.hours_per_day)
+            absence_hours = confirmed_absences.get((current_day, person.person_id), 0)
+            daily_remaining = max(0, round(base_capacity - absence_hours, 6))
             while daily_remaining > 0.000001:
                 selected: Activity | None = None
                 selected_remaining_max = 0.0

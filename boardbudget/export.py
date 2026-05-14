@@ -7,6 +7,7 @@ from pathlib import Path
 from .dashboard import (
     build_activity_economics_dataframe,
     build_calendar_dataframe,
+    build_calendar_pivot_dataframe,
     build_dashboard_dataframe,
     build_person_economics_dataframe,
     build_warnings_dataframe,
@@ -20,10 +21,11 @@ def recalculate_board_file(path: Path) -> None:
     result = calculate_plan(board_data)
     calendar_df = build_calendar_dataframe(result, board_data)
     economics_df = build_activity_economics_dataframe(result, board_data)
+    board_calendar_df = build_calendar_pivot_dataframe(calendar_df, board_data)
     person_economics_df = build_person_economics_dataframe(result, board_data)
     dashboard_df = build_dashboard_dataframe(result, board_data)
     warnings_df = build_warnings_dataframe(result.warnings)
-    write_generated_sheets(path, calendar_df, dashboard_df, warnings_df, economics_df, person_economics_df)
+    write_generated_sheets(path, calendar_df, dashboard_df, warnings_df, economics_df, board_calendar_df, person_economics_df)
 
 
 def prepare_board_download_file(board_path: Path) -> bytes:

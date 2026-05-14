@@ -12,6 +12,7 @@ DEFAULT_SETTINGS = {
     "font_size": "Normal",
     "theme": "System/default",
     "non_working_day_color": "#fdecec",
+    "absence_day_color": "#fff4cc",
 }
 
 
@@ -31,4 +32,3 @@ def load_app_settings(path: Path = SETTINGS_PATH) -> dict[str, str]:
 
 def save_app_settings(settings: dict[str, str], path: Path = SETTINGS_PATH) -> None:
     path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-

@@ -11,8 +11,10 @@ from openpyxl import load_workbook
 from .config import (
     ACTIVITIES_SHEET,
     ASSIGNMENTS_SHEET,
+    ABSENCES_SHEET,
     ACTIVITY_ECONOMICS_SHEET,
     BOARD_SHEET,
+    BOARD_CALENDAR_SHEET,
     CALENDAR_SHEET,
     DASHBOARD_SHEET,
     DEFAULT_HOURS_PER_DAY,
@@ -22,7 +24,7 @@ from .config import (
     WARNINGS_SHEET,
 )
 from .estimates import normalize_estimates
-from .models import Activity, Assignment, BoardData, BoardSettings, Person, WarningMessage
+from .models import Absence, Activity, Assignment, BoardData, BoardSettings, Person, WarningMessage
 
 
 BOARD_COLUMNS = ["key", "value"]
@@ -40,6 +42,7 @@ ACTIVITY_COLUMNS = [
     "price_notes",
 ]
 ASSIGNMENT_COLUMNS = ["activity_id", "person_id"]
+ABSENCE_COLUMNS = ["date", "person_id", "absence_code", "hours", "note"]
 
 
 def _blank_to_none(value: Any) -> Any:
@@ -162,6 +165,22 @@ def _assignments_to_df(assignments: list[Assignment]) -> pd.DataFrame:
     )
 
 
+def _absences_to_df(absences: list[Absence]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "date": absence.date.isoformat(),
+                "person_id": absence.person_id,
+                "absence_code": absence.absence_code,
+                "hours": absence.hours,
+                "note": absence.note,
+            }
+            for absence in absences
+        ],
+        columns=ABSENCE_COLUMNS,
+    )
+
+
 def _write_input_sheets(path: Path, board_data: BoardData) -> None:
     mode = "a" if path.exists() else "w"
     writer_kwargs: dict[str, object] = {"engine": "openpyxl", "mode": mode}
@@ -172,6 +191,7 @@ def _write_input_sheets(path: Path, board_data: BoardData) -> None:
         _people_to_df(board_data.people).to_excel(writer, sheet_name=PEOPLE_SHEET, index=False)
         _activities_to_df(board_data.activities).to_excel(writer, sheet_name=ACTIVITIES_SHEET, index=False)
         _assignments_to_df(board_data.assignments).to_excel(writer, sheet_name=ASSIGNMENTS_SHEET, index=False)
+        _absences_to_df(board_data.absences).to_excel(writer, sheet_name=ABSENCES_SHEET, index=False)
 
 
 def create_new_board_file(path: Path, board_name: str, start_date: date) -> None:
@@ -207,6 +227,7 @@ def create_new_board_file(path: Path, board_name: str, start_date: date) -> None
                 "remaining_allocated_value_from_today",
             ]
         ),
+        pd.DataFrame(columns=["date", "day_name", "day_type", "holiday_name"]),
         pd.DataFrame(
             columns=[
                 "person_id",
@@ -296,7 +317,22 @@ def load_board(path: Path) -> BoardData:
         if any(_blank_to_none(row[column]) is not None for column in ASSIGNMENT_COLUMNS)
     ]
 
-    return BoardData(settings=settings, people=people, activities=activities, assignments=assignments, warnings=warnings)
+    absences_df, warning = _read_sheet(path, ABSENCES_SHEET, ABSENCE_COLUMNS)
+    if warning and warning.code != "MISSING_SHEET":
+        warnings.append(warning)
+    absences = [
+        Absence(
+            date=_as_date(row["date"], settings.start_date),
+            person_id=_as_str(row["person_id"]),
+            absence_code=_as_str(row["absence_code"]).upper(),
+            hours=_as_float(row["hours"], 0) or 0,
+            note=_as_str(row["note"]),
+        )
+        for _, row in absences_df.iterrows()
+        if any(_blank_to_none(row[column]) is not None for column in ABSENCE_COLUMNS)
+    ]
+
+    return BoardData(settings=settings, people=people, activities=activities, assignments=assignments, absences=absences, warnings=warnings)
 
 
 def save_board(path: Path, board_data: BoardData) -> None:
@@ -310,6 +346,7 @@ def write_generated_sheets(
     dashboard_df: pd.DataFrame,
     warnings_df: pd.DataFrame,
     activity_economics_df: pd.DataFrame | None = None,
+    board_calendar_df: pd.DataFrame | None = None,
     person_economics_df: pd.DataFrame | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -321,6 +358,8 @@ def write_generated_sheets(
         warnings_df.to_excel(writer, sheet_name=WARNINGS_SHEET, index=False)
         if activity_economics_df is not None:
             activity_economics_df.to_excel(writer, sheet_name=ACTIVITY_ECONOMICS_SHEET, index=False)
+        if board_calendar_df is not None:
+            board_calendar_df.to_excel(writer, sheet_name=BOARD_CALENDAR_SHEET, index=False)
         if person_economics_df is not None:
             person_economics_df.to_excel(writer, sheet_name=PERSON_ECONOMICS_SHEET, index=False)
 

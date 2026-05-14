@@ -57,22 +57,39 @@ def build_calendar_dataframe(result: PlanningResult, board_data: BoardData) -> p
 def build_calendar_pivot_dataframe(calendar_df: pd.DataFrame, board_data: BoardData | None = None) -> pd.DataFrame:
     person_ids = [p.person_id for p in board_data.people if p.active] if board_data else []
     if calendar_df.empty:
-        return pd.DataFrame(columns=["date", "day_name", "day_type", "holiday_name", *person_ids])
+        if not board_data or not board_data.absences:
+            return pd.DataFrame(columns=["date", "day_name", "day_type", "holiday_name", *person_ids])
+        start = min([board_data.settings.start_date, *[absence.date for absence in board_data.absences]])
+        end = max([board_data.settings.start_date, *[absence.date for absence in board_data.absences]])
+        work = pd.DataFrame(columns=["date", "person_id", "entry"])
+    else:
+        work = calendar_df.copy()
+        work["date"] = pd.to_datetime(work["date"]).dt.date
+        work["entry"] = work.apply(lambda r: f"{r['activity_id']} {r['activity_name']} {r['hours']:g}h", axis=1)
+        start = min(work["date"])
+        end = max(work["date"])
+        if board_data:
+            start = min(start, board_data.settings.start_date)
+            if board_data.absences:
+                end = max([end, *[absence.date for absence in board_data.absences]])
 
-    work = calendar_df.copy()
-    work["date"] = pd.to_datetime(work["date"]).dt.date
     person_ids = person_ids or sorted(work["person_id"].dropna().unique().tolist())
-    start = min(work["date"])
-    end = max(work["date"])
     all_dates = [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
     holidays_map = get_italian_holidays_for_years({day.year for day in all_dates})
 
-    work["entry"] = work.apply(lambda r: f"{r['activity_id']} {r['activity_name']} {r['hours']:g}h", axis=1)
     grouped = (
         work.groupby(["date", "person_id"], sort=True)["entry"]
         .apply(lambda values: " + ".join(values))
         .reset_index()
     )
+    absence_map: dict[tuple[date, str], list[str]] = {}
+    if board_data:
+        active_people = set(person_ids)
+        for absence in board_data.absences:
+            if absence.person_id not in active_people or absence.hours not in {4, 8, 4.0, 8.0} or absence.absence_code not in {"X", "?"}:
+                continue
+            prefix = "Absence" if absence.absence_code == "X" else "? Absence"
+            absence_map.setdefault((absence.date, absence.person_id), []).append(f"{prefix} {absence.hours:g}h")
 
     rows: list[dict[str, object]] = []
     for day in all_dates:
@@ -85,7 +102,10 @@ def build_calendar_pivot_dataframe(calendar_df: pd.DataFrame, board_data: BoardD
         }
         for person_id in person_ids:
             match = grouped[(grouped["date"] == day) & (grouped["person_id"] == person_id)]
-            row[person_id] = "" if match.empty else match.iloc[0]["entry"]
+            parts = absence_map.get((day, person_id), [])
+            if not match.empty:
+                parts.append(match.iloc[0]["entry"])
+            row[person_id] = " + ".join(parts)
         rows.append(row)
     return pd.DataFrame(rows, columns=["date", "day_name", "day_type", "holiday_name", *person_ids])
 
@@ -107,7 +127,7 @@ def build_dashboard_dataframe(result: PlanningResult, board_data: BoardData, tod
     delivered_value = economics_df["delivered_value_until_today"].sum() if not economics_df.empty else 0
     delivered_cost = person_economics_df["delivered_cost_until_today"].sum() if not person_economics_df.empty else 0
     estimated_delivery_cost = person_economics_df["estimated_delivery_cost"].sum() if not person_economics_df.empty else 0
-    remaining_delivery_cost = person_economics_df["remaining_delivery_cost_from_today"].sum() if not person_economics_df.empty else 0
+    remaining_delivery_cost = max(estimated_delivery_cost - delivered_cost, 0)
     expected_margin = total_estimated_value - estimated_delivery_cost
     expected_margin_percentage = (expected_margin / total_estimated_value * 100) if total_estimated_value else 0
     delivered_margin = delivered_value - delivered_cost
@@ -145,7 +165,7 @@ def build_dashboard_dataframe(result: PlanningResult, board_data: BoardData, tod
         ("if_finished_today.remaining_calendar_days_until_planned_end", (planned_end - today).days if planned_end and planned_end >= today else 0),
         ("if_finished_today.remaining_allocated_value", round(remaining_allocated_value, 2)),
         ("if_finished_today.remaining_delivery_cost", round(remaining_delivery_cost, 2)),
-        ("if_finished_today.theoretical_saving", round(remaining_delivery_cost, 2)),
+        ("if_finished_today.theoretical_saving", round(total_estimated_value - delivered_cost, 2)),
     ]
 
     for person in sorted([p for p in board_data.people if p.active], key=lambda p: p.person_id):
@@ -183,7 +203,7 @@ def build_activity_economics_dataframe(result: PlanningResult, board_data: Board
     rows: list[dict[str, object]] = []
     person_cost_by_id = {person.person_id: (person.daily_cost if person.daily_cost and person.daily_cost > 0 else 0) for person in board_data.people}
     for activity in board_data.activities:
-        if activity.status != STATUS_PLANNED:
+        if activity.status not in {STATUS_PLANNED, "DONE"}:
             continue
         daily_price = activity.daily_price if activity.daily_price and activity.daily_price > 0 else 0
         activity_allocations = [a for a in result.allocations if a.activity_id == activity.activity_id]

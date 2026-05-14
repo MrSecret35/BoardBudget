@@ -49,6 +49,7 @@ Use the tabs to edit:
 - People also include `daily_cost`, the delivery cost for one 8-hour person-day.
 - `Activities`: `activity_id`, `order`, `name`, `estimated_days`, `estimated_hours`, `max_hours_per_day`, `daily_price`, `status`, `notes`, `price_notes`
 - `Assignments`: one row per planned activity with multiselect people tags
+- `Absences`: calendar matrix with empty, `? 4`, `? 8`, `X 4`, and `X 8`
 
 The advanced assignment expander still exposes the normalized raw table. Excel also stores assignments as normalized rows: `activity_id`, `person_id`.
 
@@ -59,6 +60,7 @@ The sidebar also includes **⚙️ Settings**:
 - font size scale: Small, Normal, Large
 - theme preference: System/default, Light, Dark
 - non-working day color for weekend and holiday rows
+- absence day color for confirmed person-specific absences
 
 Settings are kept local in `boardbudget_settings.json` when saved.
 
@@ -86,16 +88,15 @@ delivery_cost = allocated_hours / 8 * person.daily_cost
 expected_margin = total_estimated_value - estimated_delivery_cost
 ```
 
-The Dashboard tab shows:
+The Dashboard tab keeps the primary economic cards small:
 
-- Valore attività
-- Erogato fino ad oggi
-- Stima erogazione
-- Margine previsto
-- Risparmio teorico se finito oggi
-- Activity economics and person economics tables
+- Activity Value: value of PLANNED and DONE activities
+- Forecast Delivery Cost: scheduled allocation cost from people daily costs
+- Delivered Cost To Date: scheduled allocation cost through today
 
-The theoretical saving assumes future scheduled delivery cost is avoided if the project is actually finished today.
+Secondary cards show Theoretical Saving If Finished Today and Forecast Margin. The theoretical saving is `Activity Value - Delivered Cost To Date`.
+
+Activity Economics includes PLANNED and DONE activities. DONE activities are considered acquired value/revenue. CANCELLED activities are excluded from economic value by default.
 
 ## Calendar Behavior
 
@@ -105,6 +106,22 @@ The visible calendar includes every calendar date between the planned start and 
 
 The raw allocation sheet does not include fake weekend or holiday allocation rows.
 
+## Vacations And Absences
+
+The Absences tab stores person-specific absences in `04_Absences`.
+
+Cell values:
+
+- empty: no absence
+- `? 4`: tentative 4-hour absence, no planning effect
+- `? 8`: tentative 8-hour absence, no planning effect
+- `X 4`: confirmed 4-hour absence, reduces that person's capacity by 4 hours
+- `X 8`: confirmed full-day absence, that person has 0 capacity that date
+
+Only confirmed `X` absences affect planning. Tentative `?` absences are informational. Absence hours do not create delivery cost; costs are calculated only from generated allocations.
+
+The Board Calendar shows confirmed absences inside the affected person's cell and highlights that cell with the configured absence color. Weekend and Italian holiday rows remain global non-working rows highlighted with the non-working color.
+
 ## Excel Sheet Format
 
 Every board workbook contains these input sheets:
@@ -113,6 +130,7 @@ Every board workbook contains these input sheets:
 - `02_People`
 - `03_Activities`
 - `04_Assignments`
+- `04_Absences`
 
 The final `03_Activities` column order is:
 
@@ -127,6 +145,7 @@ The app replaces these generated sheets when recalculating:
 - `06_Dashboard`
 - `07_Warnings`
 - `08_Activity_Economics`
+- `09_Board_Calendar`
 - `10_Person_Economics`
 
 Existing older boards remain loadable. Missing v2/v3 columns are defaulted safely and written the next time the board is saved.
@@ -136,7 +155,7 @@ Existing older boards remain loadable. Missing v2/v3 columns are defaulted safel
 - Planning is in hours.
 - Default capacity is 8 hours per person per day.
 - Working days are Monday to Friday, excluding Italian public holidays.
-- Vacations, sick leave, and part-time exceptions are ignored for allocation in v3.
+- Confirmed vacations/absences reduce person-specific daily capacity.
 - Activity `order` is a priority, not a global dependency.
 - Shared activities are independent per person.
 - Shared activity hours are no longer split equally. A shared activity has one global remaining-hours bucket, and assigned active people greedily consume it until the activity is complete.
@@ -144,6 +163,7 @@ Existing older boards remain loadable. Missing v2/v3 columns are defaulted safel
 - `max_hours_per_day` limits each assigned person on that activity for that date.
 - A person can work on multiple activities in the same day.
 - `DONE` and `CANCELLED` activities are skipped.
+- DONE activities are skipped by the planner but included in economics as acquired value.
 - Activities without assignments or invalid estimated hours produce warnings.
 - Planning is deterministic: activities sort by `order`, then `activity_id`.
 - Planning stops after a safe maximum of 730 calendar days and reports an error if work remains.
@@ -152,13 +172,15 @@ Existing older boards remain loadable. Missing v2/v3 columns are defaulted safel
 
 Display tables use AgGrid where practical, with user-resizable columns, sortable headers, and horizontal scrolling. Date/day columns and person columns are visually emphasized in the calendar. Sorting is UI-only and does not rewrite Excel. Editing tables remain lightweight Streamlit editors with configured column widths.
 
-## Known v3 Limitations
+## Known Limitations
 
 - No manual timesheet or actual-hours tracking yet.
 - Actual completion is still manually/perceptually determined; there is no automatic "finished" signal.
 - No detailed timesheet-based cost accounting yet; delivery cost is planned from calendar allocations and person daily cost.
+- Absences are simple capacity reductions; there is no approval workflow.
+- Tentative absences are informational only.
 - No holiday calendar configuration beyond Italy.
-- Resizable grid behavior is used mainly for the calendar; input editors stay lightweight.
+- Input editors stay lightweight where AgGrid editing would add too much complexity.
 - Dynamic full theme switching depends on Streamlit limitations; BoardBudget applies a lightweight app-level CSS preference.
 - No authentication, multi-user coordination, database, or cloud sync.
 

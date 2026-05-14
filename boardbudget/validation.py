@@ -89,7 +89,7 @@ def validate_board_data(board_data: BoardData) -> list[WarningMessage]:
                         f"Activity {label} has estimated_days and estimated_hours inconsistent; estimated_hours was used.",
                     )
                 )
-        if activity.status == "PLANNED" and not _is_positive_number(activity.daily_price):
+        if activity.status in {"PLANNED", "DONE"} and not _is_positive_number(activity.daily_price):
             warnings.append(
                 WarningMessage(
                     "WARNING",
@@ -123,5 +123,25 @@ def validate_board_data(board_data: BoardData) -> list[WarningMessage]:
         status = activity.status if activity.status in ALLOWED_STATUSES else "PLANNED"
         if status == "PLANNED" and activity.activity_id not in assigned_activity_ids:
             warnings.append(WarningMessage("WARNING", "ACTIVITY_WITHOUT_ASSIGNMENT", f"Activity '{activity.activity_id}' has no active assignments and will not be planned."))
+
+    absence_keys: list[str] = []
+    for absence in board_data.absences:
+        person_id = absence.person_id.strip()
+        if not isinstance(absence.date, date):
+            warnings.append(WarningMessage("WARNING", "INVALID_ABSENCE_DATE", f"Absence for person '{person_id}' has invalid date and will be ignored."))
+        if person_id not in all_person_ids:
+            warnings.append(WarningMessage("WARNING", "ABSENCE_UNKNOWN_PERSON", f"Absence references missing person '{person_id}' and will be ignored."))
+        elif person_id not in active_person_ids:
+            warnings.append(WarningMessage("WARNING", "ABSENCE_INACTIVE_PERSON", f"Absence references inactive person '{person_id}' and will be ignored."))
+        if absence.absence_code not in {"X", "?"}:
+            warnings.append(WarningMessage("WARNING", "INVALID_ABSENCE_CODE", f"Absence for person '{person_id}' has invalid code '{absence.absence_code}' and will be ignored."))
+        if absence.hours not in {4, 8, 4.0, 8.0}:
+            warnings.append(WarningMessage("WARNING", "INVALID_ABSENCE_HOURS", f"Absence for person '{person_id}' has invalid hours '{absence.hours}' and will be ignored."))
+        if isinstance(absence.date, date):
+            absence_keys.append(f"{absence.date.isoformat()}|{person_id}|{absence.absence_code}")
+
+    for key in sorted(_duplicates(absence_keys)):
+        day, person_id, code = key.split("|", 2)
+        warnings.append(WarningMessage("WARNING", "DUPLICATE_ABSENCE", f"Duplicate absence rows for {person_id} on {day} with code {code}; maximum hours will be used."))
 
     return warnings

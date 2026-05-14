@@ -41,6 +41,15 @@ class Assignment:
     person_id: str
 
 
+@dataclass(frozen=True)
+class Absence:
+    date: date
+    person_id: str
+    absence_code: str
+    hours: float
+    note: str = ""
+
+
 @dataclass
 class CalendarAllocation:
     date: date
@@ -64,4 +73,5 @@ class BoardData:
     people: list[Person] = field(default_factory=list)
     activities: list[Activity] = field(default_factory=list)
     assignments: list[Assignment] = field(default_factory=list)
+    absences: list[Absence] = field(default_factory=list)
     warnings: list[WarningMessage] = field(default_factory=list)

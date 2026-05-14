@@ -20,6 +20,7 @@ from boardbudget.sample_data import create_sample_board
 from boardbudget.settings import DEFAULT_SETTINGS, load_app_settings, save_app_settings
 from boardbudget.ui.pages import (
     render_activities_editor,
+    render_absences_editor,
     render_assignments_editor,
     render_calendar,
     render_dashboard,
@@ -104,6 +105,10 @@ def _render_sidebar_settings() -> dict[str, str]:
         settings["non_working_day_color"] = st.color_picker(
             "Non-working day color",
             settings.get("non_working_day_color", DEFAULT_SETTINGS["non_working_day_color"]),
+        )
+        settings["absence_day_color"] = st.color_picker(
+            "Absence day color",
+            settings.get("absence_day_color", DEFAULT_SETTINGS["absence_day_color"]),
         )
         st.caption("Full Streamlit theme switching may require config.toml and app restart.")
         if st.button("Save settings", use_container_width=True):
@@ -208,7 +213,7 @@ def main() -> None:
     dashboard_df = build_dashboard_dataframe(result, board_data)
     warnings_df = build_warnings_dataframe(result.warnings)
 
-    tabs = st.tabs(["Dashboard", "People", "Activities", "Assignments", "Calendar", "Warnings", "Raw Excel Info"])
+    tabs = st.tabs(["Dashboard", "People", "Activities", "Assignments", "Absences", "Calendar", "Warnings", "Raw Excel Info"])
 
     with tabs[0]:
         render_dashboard(board_data, dashboard_df, economics_df, person_economics_df, result)
@@ -247,13 +252,29 @@ def main() -> None:
                 st.error(f"Could not save assignments: {exc}")
 
     with tabs[4]:
-        settings = st.session_state.get("app_settings", DEFAULT_SETTINGS)
-        render_calendar(calendar_df, board_data, settings.get("non_working_day_color", DEFAULT_SETTINGS["non_working_day_color"]))
+        absences = render_absences_editor(board_data, result)
+        if absences is not None:
+            try:
+                board_data.absences = absences
+                save_board(selected, board_data)
+                st.success("Absences saved.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not save absences: {exc}")
 
     with tabs[5]:
-        render_warnings(warnings_df)
+        settings = st.session_state.get("app_settings", DEFAULT_SETTINGS)
+        render_calendar(
+            calendar_df,
+            board_data,
+            settings.get("non_working_day_color", DEFAULT_SETTINGS["non_working_day_color"]),
+            settings.get("absence_day_color", DEFAULT_SETTINGS["absence_day_color"]),
+        )
 
     with tabs[6]:
+        render_warnings(warnings_df)
+
+    with tabs[7]:
         render_raw_excel_info(selected)
 
 

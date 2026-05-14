@@ -14,7 +14,9 @@ def build_grid_options(
     df: pd.DataFrame,
     column_widths: dict[str, int] | None = None,
     highlight_non_working_days: bool = False,
+    highlight_absences: bool = False,
     non_working_day_color: str = "#fdecec",
+    absence_day_color: str = "#fff4cc",
     default_sort: tuple[str, str] | None = None,
     pinned_columns: list[str] | None = None,
     bold_columns: list[str] | None = None,
@@ -52,6 +54,21 @@ def build_grid_options(
             }}
             """
         )
+    if highlight_absences:
+        absence_color = _safe_hex_color(absence_day_color)
+        technical = {"date", "day_name", "day_type", "holiday_name"}
+        for col_def in options.get("columnDefs", []):
+            if col_def.get("field") not in technical:
+                col_def["cellStyle"] = JsCode(
+                    f"""
+                    function(params) {{
+                        if (params.value && String(params.value).indexOf('Absence') >= 0 && String(params.value).indexOf('? Absence') < 0) {{
+                            return {{ backgroundColor: '{absence_color}', color: '#6b4f00', fontWeight: '600' }};
+                        }}
+                        return null;
+                    }}
+                    """
+                )
     return options
 
 
@@ -61,7 +78,9 @@ def render_grid(
     height: int = 400,
     column_widths: dict[str, int] | None = None,
     highlight_non_working_days: bool = False,
+    highlight_absences: bool = False,
     non_working_day_color: str = "#fdecec",
+    absence_day_color: str = "#fff4cc",
     default_sort: tuple[str, str] | None = None,
     pinned_columns: list[str] | None = None,
     bold_columns: list[str] | None = None,
@@ -78,12 +97,14 @@ def render_grid(
             df,
             column_widths=column_widths,
             highlight_non_working_days=highlight_non_working_days,
+            highlight_absences=highlight_absences,
             non_working_day_color=non_working_day_color,
+            absence_day_color=absence_day_color,
             default_sort=default_sort,
             pinned_columns=pinned_columns,
             bold_columns=bold_columns,
         ),
-        allow_unsafe_jscode=highlight_non_working_days,
+        allow_unsafe_jscode=highlight_non_working_days or highlight_absences,
         fit_columns_on_grid_load=False,
         height=height,
         theme="streamlit",
@@ -92,7 +113,7 @@ def render_grid(
     )
 
 
-def render_calendar_grid(df: pd.DataFrame, person_ids: list[str], non_working_day_color: str = "#fdecec", height: int = 520) -> None:
+def render_calendar_grid(df: pd.DataFrame, person_ids: list[str], non_working_day_color: str = "#fdecec", absence_day_color: str = "#fff4cc", height: int = 520) -> None:
     widths = {"date": 120, "day_name": 110, "day_type": 110, "holiday_name": 180}
     widths.update({person_id: 320 for person_id in person_ids})
     render_grid(
@@ -101,7 +122,9 @@ def render_calendar_grid(df: pd.DataFrame, person_ids: list[str], non_working_da
         height=height,
         column_widths=widths,
         highlight_non_working_days=True,
+        highlight_absences=True,
         non_working_day_color=non_working_day_color,
+        absence_day_color=absence_day_color,
         default_sort=("date", "asc"),
         pinned_columns=["date", "day_name"],
         bold_columns=["date", "day_name", *person_ids],
